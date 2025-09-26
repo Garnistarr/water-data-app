@@ -16,13 +16,13 @@ st.set_page_config(
     page_icon="💧",
     layout="centered",
 )
-st.title("💧 Water Treatment App")
+# We remove the main title here because the login form provides its own.
 
 # -----------------------------
 # BigQuery Connection
 # -----------------------------
 try:
-    creds_json_str = st.secrets["GCP_CREDENTIALS"]  # JSON string in Secrets (triple-quoted)
+    creds_json_str = st.secrets["GCP_CREDENTIALS"]
     creds_dict = json.loads(creds_json_str)
     credentials = service_account.Credentials.from_service_account_info(creds_dict)
     client = bigquery.Client(credentials=credentials, project=credentials.project_id)
@@ -34,7 +34,6 @@ except Exception as e:
 
 # -----------------------------
 # Authentication (demo users)
-# NOTE: We avoid stauth.Hasher() to prevent cloud runtime errors.
 # These are bcrypt hashes for:
 #   jsmith / abc
 #   rjones / def
@@ -54,24 +53,37 @@ users = {
     }
 }
 
+# --- THIS IS THE CORRECTED SECTION ---
+# The new version of the library expects a single configuration dictionary.
+config = {
+    'credentials': users,
+    'cookie': {
+        'name': 'WaterAppCookie',
+        'key': 'abcdef',
+        'expiry_days': 30
+    }
+}
+
 authenticator = stauth.Authenticate(
-    users,
-    cookie_name="WaterAppCookie",   # any name
-    key="abcdef",                   # any random string for signing cookies
-    cookie_expiry_days=30,
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
 )
 
-name, authentication_status, username = authenticator.login("Login", "main")
+# Render the login widget
+authenticator.login()
+# --- END OF CORRECTION ---
 
 # -----------------------------
 # Main App
 # -----------------------------
-if authentication_status:
+if st.session_state["authentication_status"]:
     authenticator.logout("Logout", "sidebar")
-    st.sidebar.title(f"Welcome, {name}!")
+    st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
     # Save the email for later DB inserts
-    st.session_state["email"] = users["usernames"][username]["email"]
+    st.session_state["email"] = users["usernames"][st.session_state["username"]]["email"]
 
     # TODO: Later, fetch role & assigned WTWs from BigQuery user_permissions.
     user_role = "Process Controller"
@@ -80,30 +92,20 @@ if authentication_status:
         st.header("📝 Water Quality Data Entry")
 
         with st.form("water_quality_form", clear_on_submit=True):
-            # Timestamp in UTC for BigQuery
             entry_timestamp = datetime.now(timezone.utc)
-
-            # TODO: Populate WTW list from user_permissions in BigQuery
             wtw_name = st.selectbox("Select WTW*", ["Ashton WTW", "Clearwater WTW"])
-
             sampling_point = st.selectbox(
                 "Sampling Point*",
                 ["Raw", "Settling", "Filter 1", "Filter 2", "Final"],
             )
-
             st.markdown("---")
-
             ph = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1)
             ph_image = st.camera_input("Take pH Reading Picture")
-
             turbidity = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01)
             turbidity_image = st.camera_input("Take Turbidity Reading Picture")
-
             free_chlorine = st.number_input("Free Chlorine (mg/L)", min_value=0.0, step=0.1)
             free_chlorine_image = st.camera_input("Take Free Chlorine Picture")
-
             passcode = st.text_input("Enter Your Passcode*", type="password")
-
             submitted = st.form_submit_button("Submit Record")
 
             if submitted:
@@ -111,9 +113,6 @@ if authentication_status:
                     st.error("Passcode is required to submit.")
                 else:
                     entry_id = str(uuid.uuid4())
-
-                    # NOTE: Image upload to Cloud Storage not implemented yet.
-                    # When you add it, store the returned filenames in the *_image_filename fields.
                     rows_to_insert = [
                         {
                             "entry_id": entry_id,
@@ -125,12 +124,8 @@ if authentication_status:
                             "ph": ph,
                             "turbidity": turbidity,
                             "free_chlorine": free_chlorine,
-                            # "ph_image_filename": "...",
-                            # "turbidity_image_filename": "...",
-                            # "free_chlorine_image_filename": "...",
                         }
                     ]
-
                     table_id = "protapp_water_data.water_quality_log"
                     try:
                         errors = client.insert_rows_json(table_id, rows_to_insert)
@@ -146,9 +141,10 @@ if authentication_status:
         st.header("📈 Manager Dashboard")
         st.info("Manager dashboard coming soon.")
 
-elif authentication_status is False:
+elif st.session_state["authentication_status"] is False:
     st.error("Username/password is incorrect")
-elif authentication_status is None:
+elif st.session_state["authentication_status"] is None:
+    st.title("💧 Water Treatment App")
     st.warning("Please enter your username and password")
 
 
