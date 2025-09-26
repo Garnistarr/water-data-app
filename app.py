@@ -5,6 +5,7 @@ from google.oauth2 import service_account
 import pandas as pd
 from datetime import datetime
 import uuid
+import json
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -13,11 +14,11 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- BigQuery Connection ---
-# The st.secrets dict is populated from the secrets.toml file in Streamlit Cloud
+# --- BigQuery Connection (Corrected Version) ---
 try:
-    creds_json = st.secrets["GCP_CREDENTIALS"]
-    creds = service_account.Credentials.from_service_account_info(creds_json)
+    creds_json_str = st.secrets["GCP_CREDENTIALS"]
+    creds_dict = json.loads(creds_json_str)
+    creds = service_account.Credentials.from_service_account_info(creds_dict)
     client = bigquery.Client(credentials=creds, project=creds.project_id)
     st.session_state.db_connection = True
 except Exception as e:
