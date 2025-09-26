@@ -16,14 +16,13 @@ st.set_page_config(
     page_icon="💧",
     layout="centered",
 )
-
 st.title("💧 Water Treatment App")
 
 # -----------------------------
 # BigQuery Connection
 # -----------------------------
 try:
-    creds_json_str = st.secrets["GCP_CREDENTIALS"]  # JSON string (triple-quoted in secrets)
+    creds_json_str = st.secrets["GCP_CREDENTIALS"]  # JSON string in Secrets (triple-quoted)
     creds_dict = json.loads(creds_json_str)
     credentials = service_account.Credentials.from_service_account_info(creds_dict)
     client = bigquery.Client(credentials=credentials, project=credentials.project_id)
@@ -35,25 +34,22 @@ except Exception as e:
 
 # -----------------------------
 # Authentication (demo users)
-# Hash passwords ONCE and reuse
-# -----------------------------
-# For now we keep two demo users:
+# NOTE: We avoid stauth.Hasher() to prevent cloud runtime errors.
+# These are bcrypt hashes for:
 #   jsmith / abc
 #   rjones / def
-# You can replace with real users later or load from BigQuery.
-hashed_passwords = stauth.Hasher(["abc", "def"]).generate()  # returns list[str]
-
+# -----------------------------
 users = {
     "usernames": {
         "jsmith": {
             "email": "jsmith@example.com",
             "name": "John Smith",
-            "password": hashed_passwords[0],
+            "password": "$2b$12$o9MoKdEy3VuB5an623IFG.OR2txgFTFV9XrGBEYTIK.7U/GmVU3mK",
         },
         "rjones": {
             "email": "rjones@example.com",
             "name": "Rebecca Jones",
-            "password": hashed_passwords[1],
+            "password": "$2b$12$Q6QFIW9fRf74GMdjcHmsbuTvdb11tVCIpVaTavrmAxVwB7L6iklyS",
         },
     }
 }
@@ -154,4 +150,5 @@ elif authentication_status is False:
     st.error("Username/password is incorrect")
 elif authentication_status is None:
     st.warning("Please enter your username and password")
+
 
