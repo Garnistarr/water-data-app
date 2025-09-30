@@ -55,19 +55,20 @@ def fetch_all_users(_client):
 # Initialize Session State
 # -----------------------------
 if 'authentication_status' not in st.session_state:
-    st.session_state.update({
-        'authentication_status': None, 'name': None, 'email': None,
-        'user_data': None, 'db_client': None
-    })
+    st.session_state.authentication_status = None
+if 'user_data' not in st.session_state:
+    st.session_state.user_data = None
+if 'db_client' not in st.session_state:
+    st.session_state.db_client = get_db_connection()
 
 # -----------------------------
 # Login / Main App Logic
 # -----------------------------
-if not st.session_state['authentication_status']:
-    st.title("💧 Water Treatment App")
-    st.info("Please enter your email and password to log in.")
+if not st.session_state.authentication_status:
+    st.title("💧 Water Treatment App Login")
+    st.info("Please enter your email (in lowercase) and password.")
 
-    all_users = fetch_all_users(get_db_connection())
+    all_users = fetch_all_users(st.session_state.db_client)
     if not all_users:
         st.error("No user data found in the database. Please add a user.")
         st.stop()
@@ -79,35 +80,23 @@ if not st.session_state['authentication_status']:
 
         if submitted:
             user_data = all_users.get(email)
-            if user_data:
-                stored_hashed_password = user_data['password'].encode('utf-8')
-                typed_password_bytes = password.encode('utf-8')
-                
-                if bcrypt.checkpw(typed_password_bytes, stored_hashed_password):
-                    st.session_state.update({
-                        'authentication_status': True,
-                        'name': user_data['name'],
-                        'email': email,
-                        'user_data': user_data,
-                        'db_client': get_db_connection()
-                    })
-                    st.rerun()
-                else:
-                    st.error("Incorrect email or password")
+            if user_data and bcrypt.checkpw(password.encode('utf-8'), user_data['password'].encode('utf-8')):
+                st.session_state.authentication_status = True
+                st.session_state.user_data = user_data
+                st.session_state.email = email # Keep email for logging
+                st.rerun()
             else:
                 st.error("Incorrect email or password")
 else:
     # --- This is the Home Page for logged-in users ---
-    st.sidebar.title(f"Welcome, {st.session_state['name']}!")
+    st.sidebar.title(f"Welcome, {st.session_state.user_data['name']}!")
     if st.sidebar.button("Logout"):
-        for key in st.session_state.keys():
-            del st.session_state[key]
+        st.session_state.clear()
         st.rerun()
 
     st.title("ProtApp Home")
     st.header("Welcome to the Water Treatment Data App")
-    st.info("Please select a page from the sidebar to begin.")
-
+    st.info("Please select a page from the sidebar menu to begin.")
 
 
 
