@@ -36,24 +36,26 @@ def get_db_connection():
 client = get_db_connection()
 
 # -----------------------------
-# Function to Fetch Users from BigQuery (Now case-insensitive)
+# Function to Fetch Users from BigQuery (Hardened for Case-Insensitivity)
 # -----------------------------
-@st.cache_data(ttl=600) # Cache the user list for 10 minutes
+@st.cache_data(ttl=600)
 def fetch_users_from_db():
     query = "SELECT email, name, password, role, assigned_wtws FROM protapp_water_data.user_permissions"
     try:
-        # Ensure all emails in the query result are lowercase before creating the dataframe
         df = client.query(query).to_dataframe()
-        if not df.empty:
-            df['email'] = df['email'].str.lower()
+        if df.empty:
+            return {"usernames": {}}
+            
+        # Force email column to lowercase to standardize it
+        df['email'] = df['email'].str.lower()
         
         users = {"usernames": {}}
         for index, row in df.iterrows():
-            email_lower = row["email"] # Already lowercase from the line above
+            email_lower = row["email"]
             assigned_wtws = row['assigned_wtws'] if row['assigned_wtws'] is not None else []
             
             users["usernames"][email_lower] = {
-                "email": email_lower, # Store the lowercase email
+                "email": email_lower,
                 "name": row["name"],
                 "password": row["password"],
                 "role": row["role"], 
@@ -68,22 +70,16 @@ def fetch_users_from_db():
 users_from_db = fetch_users_from_db()
 
 # -----------------------------
-# Authentication (Using latest library pattern)
+# Authentication
 # -----------------------------
 if not users_from_db or not users_from_db["usernames"]:
-    st.error("No user data found in the database. Please add users to the user_permissions table.")
+    st.error("No user data found in the database. Please add a user to the user_permissions table.")
     st.stop()
 
 config = {
     'credentials': users_from_db,
-    'cookie': {
-        'name': 'WaterAppCookie',
-        'key': 'abcdef',
-        'expiry_days': 30
-    },
-    'preauthorized': {
-        'emails': []
-    }
+    'cookie': {'name': 'WaterAppCookie', 'key': 'abcdef', 'expiry_days': 30},
+    'preauthorized': {'emails': []}
 }
 
 authenticator = stauth.Authenticate(
@@ -94,7 +90,6 @@ authenticator = stauth.Authenticate(
     config['preauthorized']
 )
 
-# Use email as the username field and make it case-insensitive
 authenticator.login(fields={'Username': 'Email'})
 
 # -----------------------------
@@ -104,12 +99,15 @@ if st.session_state["authentication_status"]:
     authenticator.logout("Logout", "sidebar")
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
-    # The username from session_state is already the email typed by the user
     username_lower = st.session_state["username"].lower()
-    current_user_data = users_from_db["usernames"][username_lower]
+    current_user_data = users_from_db["usernames"].get(username_lower)
     
-    user_role = current_user_data["role"]
-    assigned_wtws = current_user_data["wtws"]
+    if not current_user_data:
+        st.error("Could not find user data after login. Please clear cache and try again.")
+        st.stop()
+
+    user_role = current_user_data.get("role")
+    assigned_wtws = current_user_data.get("wtws", [])
 
     if user_role == "Process Controller":
         st.header("📝 Water Quality Data Entry")
@@ -118,15 +116,12 @@ if st.session_state["authentication_status"]:
             entry_timestamp = datetime.now(timezone.utc)
             
             if not assigned_wtws:
-                st.warning("You are not assigned to any Water Treatment Works. Please contact an administrator.")
+                st.warning("You are not assigned to any WTWs. Please contact an administrator.")
                 wtw_name = None
             else:
                 wtw_name = st.selectbox("Select WTW*", assigned_wtws)
 
-            sampling_point = st.selectbox(
-                "Sampling Point*",
-                ["Raw", "Settling", "Filter 1", "Filter 2", "Final"],
-            )
+            sampling_point = st.selectbox("Sampling Point*", ["Raw", "Settling", "Filter 1", "Filter 2", "Final"])
             st.markdown("---")
             ph = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1)
             ph_image = st.camera_input("Take pH Reading Picture")
@@ -142,19 +137,13 @@ if st.session_state["authentication_status"]:
                     st.error("Passcode and WTW selection are required.")
                 else:
                     entry_id = str(uuid.uuid4())
-                    rows_to_insert = [
-                        {
-                            "entry_id": entry_id,
-                            "entry_timestamp": entry_timestamp.isoformat(),
-                            "wtw_name": wtw_name,
-                            "sampling_point": sampling_point,
-                            "user_email": st.session_state["username"],
-                            "passcode_used": passcode,
-                            "ph": ph,
-                            "turbidity": turbidity,
-                            "free_chlorine": free_chlorine,
-                        }
-                    ]
+                    rows_to_insert = [{
+                        "entry_id": entry_id, "entry_timestamp": entry_timestamp.isoformat(),
+                        "wtw_name": wtw_name, "sampling_point": sampling_point,
+                        "user_email": st.session_state["username"],
+                        "passcode_used": passcode, "ph": ph, "turbidity": turbidity,
+                        "free_chlorine": free_chlorine,
+                    }]
                     table_id = "protapp_water_data.water_quality_log"
                     try:
                         errors = client.insert_rows_json(table_id, rows_to_insert)
@@ -176,10 +165,11 @@ elif st.session_state["authentication_status"] is None:
     st.title("💧 Water Treatment App")
     st.warning("Please enter your email and password")
     
-    # Failsafe button to clear the cache if something goes wrong
     if st.button("Having trouble? Click here to clear cache and rerun"):
         st.cache_data.clear()
         st.rerun()
+
+
 
 
 
