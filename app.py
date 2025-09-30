@@ -1,3 +1,4 @@
+
 import json
 import uuid
 from datetime import datetime, timezone
@@ -36,26 +37,25 @@ def get_db_connection():
 client = get_db_connection()
 
 # -----------------------------
-# Function to Fetch Users from BigQuery (Now case-insensitive)
+# Function to Fetch Users from BigQuery (keys use email as-is)
 # -----------------------------
 @st.cache_data(ttl=600) # Cache the user list for 10 minutes
 def fetch_users_from_db():
     query = "SELECT email, name, password, role, assigned_wtws FROM protapp_water_data.user_permissions"
     try:
         df = client.query(query).to_dataframe()
-        
+
         users = {"usernames": {}}
         for index, row in df.iterrows():
-            # Convert email to lowercase for the dictionary key to ensure case-insensitive lookups
-            email_lower = row["email"].lower()
-            
+            # Use email as-is for the dictionary key to match authenticator lookup
+            email_key = row["email"]
             assigned_wtws = row['assigned_wtws'] if row['assigned_wtws'] is not None else []
-            
-            users["usernames"][email_lower] = {
+
+            users["usernames"][email_key] = {
                 "email": row["email"],
                 "name": row["name"],
                 "password": row["password"],
-                "role": row["role"], 
+                "role": row["role"],
                 "wtws": assigned_wtws
             }
         return users
@@ -86,15 +86,26 @@ config = {
 }
 
 # -----------------------------
-# PATCH: Make authentication case-insensitive for usernames
+# PATCH: Try to enable case-insensitive login if supported
+# If you get a TypeError, remove username_case_sensitive=False
 # -----------------------------
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days'],
-    config['preauthorized']
-)
+try:
+    authenticator = stauth.Authenticate(
+        config['credentials'],
+        config['cookie']['name'],
+        config['cookie']['key'],
+        config['cookie']['expiry_days'],
+        config['preauthorized'],
+        username_case_sensitive=False  # Try this for case-insensitive, remove if error!
+    )
+except TypeError:
+    authenticator = stauth.Authenticate(
+        config['credentials'],
+        config['cookie']['name'],
+        config['cookie']['key'],
+        config['cookie']['expiry_days'],
+        config['preauthorized']
+    )
 
 authenticator.login()
 
@@ -106,17 +117,15 @@ if st.session_state["authentication_status"]:
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
     # --- PATCHED SECTION ---
-    # Always convert to lowercase for lookup, as dictionary keys are lowercased
-    # FIX: Make sure username lookup is always lowercase
-    username_raw = st.session_state["username"]
-    username_lower = username_raw.lower()
-    # Defensive: Check if username_lower exists, else show error
-    if username_lower not in users_from_db["usernames"]:
+    # Use username from session_state as-is
+    username = st.session_state["username"]
+    # Defensive: Check if username exists in the dictionary
+    if username not in users_from_db["usernames"]:
         st.error("Authenticated user not found in the database. Please contact admin.")
         st.stop()
-    current_user_data = users_from_db["usernames"][username_lower]
+    current_user_data = users_from_db["usernames"][username]
     # --- END PATCHED SECTION ---
-    
+
     user_role = current_user_data["role"]
     assigned_wtws = current_user_data["wtws"]
 
@@ -125,7 +134,7 @@ if st.session_state["authentication_status"]:
 
         with st.form("water_quality_form", clear_on_submit=True):
             entry_timestamp = datetime.now(timezone.utc)
-            
+
             # Ensure assigned_wtws is not empty before creating the selectbox
             if not assigned_wtws:
                 st.warning("You are not assigned to any Water Treatment Works. Please contact an administrator.")
@@ -158,7 +167,7 @@ if st.session_state["authentication_status"]:
                             "entry_timestamp": entry_timestamp.isoformat(),
                             "wtw_name": wtw_name,
                             "sampling_point": sampling_point,
-                            "user_email": username_raw, # We store the original-case email
+                            "user_email": username,  # Use original-case email
                             "passcode_used": passcode,
                             "ph": ph,
                             "turbidity": turbidity,
@@ -185,7 +194,6 @@ elif st.session_state["authentication_status"] is False:
 elif st.session_state["authentication_status"] is None:
     st.title("💧 Water Treatment App")
     st.warning("Please enter your username and password")
-
 
 
 
