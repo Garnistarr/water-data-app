@@ -49,11 +49,21 @@ def fetch_users_from_db():
         users = {}
         for index, row in df.iterrows():
             email_lower = row["email"]
+            
+            # --- THIS IS THE CORRECTED SECTION ---
+            # Explicitly convert the numpy array from BigQuery into a standard Python list
+            wtws_value = row['assigned_wtws']
+            if wtws_value is None:
+                assigned_list = []
+            else:
+                assigned_list = list(wtws_value)
+            # --- END OF CORRECTION ---
+
             users[email_lower] = {
                 "name": row["name"],
                 "password": row["password"],
                 "role": row["role"], 
-                "wtws": row['assigned_wtws'] if row['assigned_wtws'] is not None else []
+                "wtws": assigned_list # Use the corrected list
             }
         return users
     except Exception as e:
