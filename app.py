@@ -36,7 +36,7 @@ def get_db_connection():
 client = get_db_connection()
 
 # -----------------------------
-# NEW: Function to Fetch Users from BigQuery
+# Function to Fetch Users from BigQuery (Now case-insensitive)
 # -----------------------------
 @st.cache_data(ttl=600) # Cache the user list for 10 minutes
 def fetch_users_from_db():
@@ -44,17 +44,17 @@ def fetch_users_from_db():
     try:
         df = client.query(query).to_dataframe()
         
-        # Convert the DataFrame into the dictionary structure streamlit-authenticator expects
         users = {"usernames": {}}
         for index, row in df.iterrows():
-            # BigQuery returns a list for the array type. No conversion needed.
+            # Convert email to lowercase to prevent case-sensitivity issues
+            email_lower = row["email"].lower()
+            
             assigned_wtws = row['assigned_wtws'] if row['assigned_wtws'] is not None else []
             
-            users["usernames"][row["email"]] = {
+            users["usernames"][email_lower] = {
                 "email": row["email"],
                 "name": row["name"],
                 "password": row["password"],
-                # We will use these custom fields later
                 "role": row["role"], 
                 "wtws": assigned_wtws
             }
@@ -64,13 +64,11 @@ def fetch_users_from_db():
         st.exception(e)
         return {"usernames": {}}
 
-# Fetch the users from the database
 users_from_db = fetch_users_from_db()
 
 # -----------------------------
-# Authentication
+# Authentication (Using latest library pattern)
 # -----------------------------
-# Check if there are any users fetched from the DB
 if not users_from_db or not users_from_db["usernames"]:
     st.error("No user data found in the database. Please add users to the user_permissions table.")
     st.stop()
@@ -81,6 +79,9 @@ config = {
         'name': 'WaterAppCookie',
         'key': 'abcdef',
         'expiry_days': 30
+    },
+    'preauthorized': {
+        'emails': []
     }
 }
 
@@ -88,7 +89,8 @@ authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],
     config['cookie']['key'],
-    config['cookie']['expiry_days']
+    config['cookie']['expiry_days'],
+    config['preauthorized']
 )
 
 authenticator.login()
@@ -100,7 +102,6 @@ if st.session_state["authentication_status"]:
     authenticator.logout("Logout", "sidebar")
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
-    # Get user details from the fetched user data
     current_user_data = users_from_db["usernames"][st.session_state["username"]]
     user_role = current_user_data["role"]
     assigned_wtws = current_user_data["wtws"]
@@ -111,7 +112,6 @@ if st.session_state["authentication_status"]:
         with st.form("water_quality_form", clear_on_submit=True):
             entry_timestamp = datetime.now(timezone.utc)
             
-            # Now the WTW list is dynamic based on user permissions
             wtw_name = st.selectbox("Select WTW*", assigned_wtws)
 
             sampling_point = st.selectbox(
@@ -148,7 +148,7 @@ if st.session_state["authentication_status"]:
                     ]
                     table_id = "protapp_water_data.water_quality_log"
                     try:
-                        errors = client.insert_rows_json(table_id, rows_to_.insert)
+                        errors = client.insert_rows_json(table_id, rows_to_insert)
                         if not errors:
                             st.success("✅ Record submitted successfully!")
                         else:
@@ -166,6 +166,5 @@ elif st.session_state["authentication_status"] is False:
 elif st.session_state["authentication_status"] is None:
     st.title("💧 Water Treatment App")
     st.warning("Please enter your username and password")
-
 
 
