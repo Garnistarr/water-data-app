@@ -46,7 +46,7 @@ def fetch_users_from_db():
         
         users = {"usernames": {}}
         for index, row in df.iterrows():
-            # Convert email to lowercase to prevent case-sensitivity issues
+            # Convert email to lowercase for the dictionary key to ensure case-insensitive lookups
             email_lower = row["email"].lower()
             
             assigned_wtws = row['assigned_wtws'] if row['assigned_wtws'] is not None else []
@@ -103,7 +103,7 @@ if st.session_state["authentication_status"]:
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
     # --- THIS IS THE CORRECTED SECTION ---
-    # Convert the logged-in username to lowercase for a case-insensitive lookup
+    # Convert the logged-in username (which is the email) to lowercase for a case-insensitive lookup
     username_lower = st.session_state["username"].lower()
     current_user_data = users_from_db["usernames"][username_lower]
     # --- END OF CORRECTION ---
@@ -117,7 +117,12 @@ if st.session_state["authentication_status"]:
         with st.form("water_quality_form", clear_on_submit=True):
             entry_timestamp = datetime.now(timezone.utc)
             
-            wtw_name = st.selectbox("Select WTW*", assigned_wtws)
+            # Ensure assigned_wtws is not empty before creating the selectbox
+            if not assigned_wtws:
+                st.warning("You are not assigned to any Water Treatment Works. Please contact an administrator.")
+                wtw_name = None
+            else:
+                wtw_name = st.selectbox("Select WTW*", assigned_wtws)
 
             sampling_point = st.selectbox(
                 "Sampling Point*",
