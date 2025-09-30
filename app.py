@@ -30,7 +30,7 @@ def coerce_wtws(value):
     if isinstance(value, list):
         return value
     if isinstance(value, str):
-        # try JSON list first; else comma-separated
+        # try JSON list first; else comma-separated string
         try:
             parsed = json.loads(value)
             if isinstance(parsed, list):
@@ -45,7 +45,7 @@ def email_key_variants(email: str):
     Create common variants so token usernames and user input still match:
     - trimmed original
     - trimmed lowercase
-    - each with/without leading/trailing spaces
+    - each with/without leading/trailing spaces (common paste issue)
     """
     e_orig = (email or "").strip()
     e_low = e_orig.lower()
@@ -108,7 +108,7 @@ def fetch_users_from_db():
                 "wtws": coerce_wtws(row.get("assigned_wtws")),
             }
 
-            # register multiple keys so input/cookies still match
+            # Register multiple keys so input/cookies still match
             for key in email_key_variants(email_orig):
                 creds["usernames"][key] = user_block
 
@@ -126,10 +126,13 @@ if not users_from_db or not users_from_db.get("usernames"):
     st.stop()
 
 # -----------------------------
-# Authenticator builder with cookie rotation
+# One-time cookie suffix in session, to avoid duplicate widgets
 # -----------------------------
-def build_authenticator(cookie_name_suffix: str = ""):
-    cookie_name = f"WaterAppCookie{cookie_name_suffix}"
+if "auth_cookie_suffix" not in st.session_state:
+    st.session_state["auth_cookie_suffix"] = ""  # first run uses default cookie name
+
+def build_authenticator():
+    cookie_name = f"WaterAppCookie{st.session_state['auth_cookie_suffix']}"
     config = {
         "credentials": users_from_db,
         "cookie": {"name": cookie_name, "key": "abcdef", "expiry_days": 30},
@@ -143,15 +146,16 @@ def build_authenticator(cookie_name_suffix: str = ""):
         config["preauthorized"],
     )
 
-# First attempt login
+# Instantiate ONCE per run
 authenticator = build_authenticator()
+
+# Try login; if a stale cookie triggers KeyError, rotate cookie suffix and rerun
 try:
-    authenticator.login()
+    authenticator.login()  # sets st.session_state['authentication_status'], ['username'], ['name']
 except KeyError:
-    # stale cookie referenced a username no longer present -> rotate cookie and retry
-    st.warning("Saved session did not match current users. Resetting your login...")
-    authenticator = build_authenticator(cookie_name_suffix=f"_{uuid.uuid4().hex[:8]}")
-    authenticator.login()
+    # Rotate cookie name for NEXT run, then rerun so we instantiate only once
+    st.session_state["auth_cookie_suffix"] = "_" + uuid.uuid4().hex[:8]
+    st.experimental_rerun()
 
 # -----------------------------
 # Main App
@@ -165,7 +169,7 @@ if auth_status:
 
     typed_username = st.session_state.get("username", "")
 
-    # tolerant lookup
+    # Tolerant lookup: exact, normalized, stripped
     current_user = users_from_db["usernames"].get(typed_username) \
         or users_from_db["usernames"].get(normalize_email(typed_username)) \
         or users_from_db["usernames"].get(typed_username.strip())
