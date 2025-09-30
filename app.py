@@ -94,7 +94,6 @@ authenticator = stauth.Authenticate(
     config['cookie']['key'],
     config['cookie']['expiry_days'],
     config['preauthorized']
-    # REMOVED: username_case_sensitive=False
 )
 
 authenticator.login()
@@ -108,7 +107,13 @@ if st.session_state["authentication_status"]:
 
     # --- PATCHED SECTION ---
     # Always convert to lowercase for lookup, as dictionary keys are lowercased
-    username_lower = st.session_state["username"].lower()
+    # FIX: Make sure username lookup is always lowercase
+    username_raw = st.session_state["username"]
+    username_lower = username_raw.lower()
+    # Defensive: Check if username_lower exists, else show error
+    if username_lower not in users_from_db["usernames"]:
+        st.error("Authenticated user not found in the database. Please contact admin.")
+        st.stop()
     current_user_data = users_from_db["usernames"][username_lower]
     # --- END PATCHED SECTION ---
     
@@ -153,7 +158,7 @@ if st.session_state["authentication_status"]:
                             "entry_timestamp": entry_timestamp.isoformat(),
                             "wtw_name": wtw_name,
                             "sampling_point": sampling_point,
-                            "user_email": st.session_state["username"], # We store the original-case email
+                            "user_email": username_raw, # We store the original-case email
                             "passcode_used": passcode,
                             "ph": ph,
                             "turbidity": turbidity,
