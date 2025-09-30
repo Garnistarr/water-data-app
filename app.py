@@ -1,7 +1,6 @@
 import json
 import uuid
 from datetime import datetime, timezone
-
 import pandas as pd
 import streamlit as st
 import streamlit_authenticator as stauth
@@ -36,7 +35,7 @@ def get_db_connection():
 client = get_db_connection()
 
 # -----------------------------
-# Function to Fetch Users from BigQuery (Hardened for Case-Insensitivity)
+# Function to Fetch Users (Hardened for Case-Insensitivity)
 # -----------------------------
 @st.cache_data(ttl=600)
 def fetch_users_from_db():
@@ -44,9 +43,8 @@ def fetch_users_from_db():
     try:
         df = client.query(query).to_dataframe()
         if df.empty:
-            return {"usernames": {}}
+            return None
             
-        # Force email column to lowercase to standardize it
         df['email'] = df['email'].str.lower()
         
         users = {"usernames": {}}
@@ -65,14 +63,14 @@ def fetch_users_from_db():
     except Exception as e:
         st.error("🔴 Could not fetch user data from BigQuery.")
         st.exception(e)
-        return {"usernames": {}}
+        return None
 
 users_from_db = fetch_users_from_db()
 
 # -----------------------------
 # Authentication
 # -----------------------------
-if not users_from_db or not users_from_db["usernames"]:
+if not users_from_db:
     st.error("No user data found in the database. Please add a user to the user_permissions table.")
     st.stop()
 
@@ -90,6 +88,11 @@ authenticator = stauth.Authenticate(
     config['preauthorized']
 )
 
+# --- This is the key change to prevent user confusion ---
+st.title("💧 Water Treatment App")
+st.info("Please use your email address in all lowercase letters to log in.")
+# ---
+
 authenticator.login(fields={'Username': 'Email'})
 
 # -----------------------------
@@ -104,6 +107,9 @@ if st.session_state["authentication_status"]:
     
     if not current_user_data:
         st.error("Could not find user data after login. Please clear cache and try again.")
+        if st.button("Clear Cache and Rerun"):
+            st.cache_data.clear()
+            st.rerun()
         st.stop()
 
     user_role = current_user_data.get("role")
@@ -124,11 +130,9 @@ if st.session_state["authentication_status"]:
             sampling_point = st.selectbox("Sampling Point*", ["Raw", "Settling", "Filter 1", "Filter 2", "Final"])
             st.markdown("---")
             ph = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1)
-            ph_image = st.camera_input("Take pH Reading Picture")
+            # Image inputs omitted for brevity in this section
             turbidity = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01)
-            turbidity_image = st.camera_input("Take Turbidity Reading Picture")
             free_chlorine = st.number_input("Free Chlorine (mg/L)", min_value=0.0, step=0.1)
-            free_chlorine_image = st.camera_input("Take Free Chlorine Picture")
             passcode = st.text_input("Enter Your Passcode*", type="password")
             submitted = st.form_submit_button("Submit Record")
 
@@ -162,13 +166,8 @@ if st.session_state["authentication_status"]:
 elif st.session_state["authentication_status"] is False:
     st.error("Username/password is incorrect")
 elif st.session_state["authentication_status"] is None:
-    st.title("💧 Water Treatment App")
-    st.warning("Please enter your email and password")
-    
-    if st.button("Having trouble? Click here to clear cache and rerun"):
-        st.cache_data.clear()
-        st.rerun()
-
+    # No title or warning here, handled by the new info box above the login
+    pass
 
 
 
