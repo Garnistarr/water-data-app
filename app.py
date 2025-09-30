@@ -85,12 +85,16 @@ config = {
     }
 }
 
+# -----------------------------
+# PATCH: Make authentication case-insensitive for usernames
+# -----------------------------
 authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],
     config['cookie']['key'],
     config['cookie']['expiry_days'],
-    config['preauthorized']
+    config['preauthorized'],
+    username_case_sensitive=False  # <-- PATCH: ensure case-insensitive logins!
 )
 
 authenticator.login()
@@ -102,11 +106,11 @@ if st.session_state["authentication_status"]:
     authenticator.logout("Logout", "sidebar")
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
-    # --- THIS IS THE CORRECTED SECTION ---
-    # Convert the logged-in username (which is the email) to lowercase for a case-insensitive lookup
+    # --- PATCHED SECTION ---
+    # Always convert to lowercase for lookup, as dictionary keys are lowercased
     username_lower = st.session_state["username"].lower()
     current_user_data = users_from_db["usernames"][username_lower]
-    # --- END OF CORRECTION ---
+    # --- END PATCHED SECTION ---
     
     user_role = current_user_data["role"]
     assigned_wtws = current_user_data["wtws"]
