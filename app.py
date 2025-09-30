@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
-import streamlit_authenticator as stauth
+import bcrypt
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
@@ -44,20 +44,16 @@ def fetch_users_from_db():
         df = client.query(query).to_dataframe()
         if df.empty:
             return None
-            
         df['email'] = df['email'].str.lower()
         
-        users = {"usernames": {}}
+        users = {}
         for index, row in df.iterrows():
             email_lower = row["email"]
-            assigned_wtws = row['assigned_wtws'] if row['assigned_wtws'] is not None else []
-            
-            users["usernames"][email_lower] = {
-                "email": email_lower,
+            users[email_lower] = {
                 "name": row["name"],
                 "password": row["password"],
                 "role": row["role"], 
-                "wtws": assigned_wtws
+                "wtws": row['assigned_wtws'] if row['assigned_wtws'] is not None else []
             }
         return users
     except Exception as e:
@@ -65,51 +61,62 @@ def fetch_users_from_db():
         st.exception(e)
         return None
 
-users_from_db = fetch_users_from_db()
-
 # -----------------------------
-# Authentication
+# Initialize Session State
 # -----------------------------
-if not users_from_db:
-    st.error("No user data found in the database. Please add a user to the user_permissions table.")
-    st.stop()
+if 'authentication_status' not in st.session_state:
+    st.session_state['authentication_status'] = None
+if 'name' not in st.session_state:
+    st.session_state['name'] = None
+if 'email' not in st.session_state:
+    st.session_state['email'] = None
 
-config = {
-    'credentials': users_from_db,
-    'cookie': {'name': 'WaterAppCookie', 'key': 'abcdef', 'expiry_days': 30},
-    'preauthorized': {'emails': []}
-}
+# --- Custom Login Logic ---
+if not st.session_state['authentication_status']:
+    st.title("💧 Water Treatment App")
+    st.info("Please enter your email and password to log in.")
 
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days'],
-    config['preauthorized']
-)
+    users_from_db = fetch_users_from_db()
+    if not users_from_db:
+        st.error("No user data found in the database. Please add a user.")
+        st.stop()
 
-# --- This is the key change to prevent user confusion ---
-st.title("💧 Water Treatment App")
-st.info("Please use your email address in all lowercase letters to log in.")
-# ---
+    with st.form("login_form"):
+        email = st.text_input("Email").lower()
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
 
-authenticator.login(fields={'Username': 'Email'})
-
-# -----------------------------
-# Main App
-# -----------------------------
-if st.session_state["authentication_status"]:
-    authenticator.logout("Logout", "sidebar")
+        if submitted:
+            if email in users_from_db:
+                user_data = users_from_db[email]
+                stored_hashed_password = user_data['password'].encode('utf-8')
+                typed_password_bytes = password.encode('utf-8')
+                
+                if bcrypt.checkpw(typed_password_bytes, stored_hashed_password):
+                    st.session_state['authentication_status'] = True
+                    st.session_state['name'] = user_data['name']
+                    st.session_state['email'] = email
+                    st.rerun()
+                else:
+                    st.error("Incorrect email or password")
+            else:
+                st.error("Incorrect email or password")
+else:
+    # -----------------------------
+    # Main App (for logged-in users)
+    # -----------------------------
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
+    if st.sidebar.button("Logout"):
+        st.session_state['authentication_status'] = None
+        st.session_state['name'] = None
+        st.session_state['email'] = None
+        st.rerun()
 
-    username_lower = st.session_state["username"].lower()
-    current_user_data = users_from_db["usernames"].get(username_lower)
+    users_from_db = fetch_users_from_db()
+    current_user_data = users_from_db.get(st.session_state['email'])
     
     if not current_user_data:
-        st.error("Could not find user data after login. Please clear cache and try again.")
-        if st.button("Clear Cache and Rerun"):
-            st.cache_data.clear()
-            st.rerun()
+        st.error("Could not find your user data. Please log out and log back in.")
         st.stop()
 
     user_role = current_user_data.get("role")
@@ -130,7 +137,6 @@ if st.session_state["authentication_status"]:
             sampling_point = st.selectbox("Sampling Point*", ["Raw", "Settling", "Filter 1", "Filter 2", "Final"])
             st.markdown("---")
             ph = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1)
-            # Image inputs omitted for brevity in this section
             turbidity = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01)
             free_chlorine = st.number_input("Free Chlorine (mg/L)", min_value=0.0, step=0.1)
             passcode = st.text_input("Enter Your Passcode*", type="password")
@@ -144,7 +150,7 @@ if st.session_state["authentication_status"]:
                     rows_to_insert = [{
                         "entry_id": entry_id, "entry_timestamp": entry_timestamp.isoformat(),
                         "wtw_name": wtw_name, "sampling_point": sampling_point,
-                        "user_email": st.session_state["username"],
+                        "user_email": st.session_state["email"],
                         "passcode_used": passcode, "ph": ph, "turbidity": turbidity,
                         "free_chlorine": free_chlorine,
                     }]
@@ -163,11 +169,6 @@ if st.session_state["authentication_status"]:
         st.header("📈 Manager Dashboard")
         st.info("Manager dashboard coming soon.")
 
-elif st.session_state["authentication_status"] is False:
-    st.error("Username/password is incorrect")
-elif st.session_state["authentication_status"] is None:
-    # No title or warning here, handled by the new info box above the login
-    pass
 
 
 
