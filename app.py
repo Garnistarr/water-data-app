@@ -93,8 +93,8 @@ authenticator = stauth.Authenticate(
     config['cookie']['name'],
     config['cookie']['key'],
     config['cookie']['expiry_days'],
-    config['preauthorized'],
-    username_case_sensitive=False  # <-- PATCH: ensure case-insensitive logins!
+    config['preauthorized']
+    # REMOVED: username_case_sensitive=False
 )
 
 authenticator.login()
