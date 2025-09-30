@@ -2,32 +2,21 @@ import streamlit as st
 import uuid
 from datetime import datetime, timezone
 
-# Set the title of the page
 st.title("💧 Water Quality Data Entry")
 
-# Check if the user is logged in, which is set in app.py
+# Check if the user is logged in
 if st.session_state.get('authentication_status'):
-    
-    # Get shared data from the session state (the "briefcase")
-    user_data = st.session_state.get('user_data', {})
-    client = st.session_state.get('db_client')
-
-    # Safety check to ensure data exists
-    if not user_data or not client:
-        st.error("Session expired or data is missing. Please log out from the Home page and log back in.")
-        st.stop()
-
+    user_data = st.session_state.user_data
+    client = st.session_state.db_client
     user_role = user_data.get("role")
     assigned_wtws = user_data.get("wtws", [])
 
-    # Display content based on the user's role
     if user_role == "Process Controller":
-        
         with st.form("water_quality_form", clear_on_submit=True):
             entry_timestamp = datetime.now(timezone.utc)
             
             if not assigned_wtws:
-                st.warning("You are not assigned to any Water Treatment Works. Please contact an administrator.")
+                st.warning("You are not assigned to any WTWs. Please contact an administrator.")
                 wtw_name = None
             else:
                 wtw_name = st.selectbox("Select WTW*", assigned_wtws)
@@ -48,7 +37,7 @@ if st.session_state.get('authentication_status'):
                     rows_to_insert = [{
                         "entry_id": entry_id, "entry_timestamp": entry_timestamp.isoformat(),
                         "wtw_name": wtw_name, "sampling_point": sampling_point,
-                        "user_email": st.session_state["email"],
+                        "user_email": st.session_state.email,
                         "passcode_used": passcode, "ph": ph, "turbidity": turbidity,
                         "free_chlorine": free_chlorine,
                     }]
@@ -62,12 +51,10 @@ if st.session_state.get('authentication_status'):
                     except Exception as e:
                         st.error("Error while inserting into BigQuery.")
                         st.exception(e)
-    
-    elif user_role == "Manager":
+    else:
         st.info("As a Manager, you do not have access to this data entry form.")
-
 else:
-    # If the user is not logged in, show a warning message
     st.warning("Please log in on the Home page to access this page.")
+
 
 
