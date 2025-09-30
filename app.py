@@ -3,7 +3,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-import pandas as pd
+import pandas as pd  # optional, but harmless
 import streamlit as st
 import streamlit_authenticator as stauth
 from google.cloud import bigquery
@@ -19,23 +19,24 @@ st.set_page_config(
 )
 
 # -----------------------------
-# Helpers
+# Small helpers
 # -----------------------------
 def normalize_email(value: str) -> str:
+    """Trim and lowercase emails for case-insensitive matching."""
     return (value or "").strip().lower()
 
 def coerce_wtws(value):
-    """Return a list for assigned_wtws regardless of how it's stored."""
+    """Ensure assigned_wtws is a list."""
     if value is None:
         return []
     if isinstance(value, list):
         return value
     if isinstance(value, str):
-        # try JSON first, otherwise split on commas
+        # try JSON first, fallback to comma-separated
         try:
-            j = json.loads(value)
-            if isinstance(j, list):
-                return j
+            maybe_json = json.loads(value)
+            if isinstance(maybe_json, list):
+                return maybe_json
         except Exception:
             pass
         return [w.strip() for w in value.split(",") if w.strip()]
@@ -47,20 +48,21 @@ def coerce_wtws(value):
 @st.cache_resource
 def get_db_connection():
     try:
-        creds_json_str = st.secrets["GCP_CREDENTIALS"]  # stored in .streamlit/secrets.toml
+        # In .streamlit/secrets.toml: GCP_CREDENTIALS = "<entire JSON string>"
+        creds_json_str = st.secrets["GCP_CREDENTIALS"]
         creds_dict = json.loads(creds_json_str)
         credentials = service_account.Credentials.from_service_account_info(creds_dict)
         client = bigquery.Client(credentials=credentials, project=credentials.project_id)
         return client
     except Exception as e:
-        st.error("🔴 Could not connect to BigQuery. Please check your credentials in Secrets.")
+        st.error("Could not connect to BigQuery. Check GCP_CREDENTIALS in Secrets.")
         st.exception(e)
         st.stop()
 
 client = get_db_connection()
 
 # -----------------------------
-# Load users from BigQuery (case-insensitive + whitespace tolerant)
+# Load users from BigQuery
 # -----------------------------
 @st.cache_data(ttl=600)
 def fetch_users_from_db():
@@ -81,27 +83,26 @@ def fetch_users_from_db():
         for _, row in df.iterrows():
             email_orig = (row.get("email") or "").strip()
             if not email_orig:
-                # skip rows without an email
-                continue
+                continue  # skip invalid rows
 
             email_norm = normalize_email(email_orig)
 
             user_block = {
-                "email": email_orig,                              # shown in UI
-                "name": row.get("name") or email_orig,            # display name
-                "password": row.get("password") or "",            # hash preferred
+                "email": email_orig,                             # shown by the library
+                "name": row.get("name") or email_orig,           # display name
+                "password": row.get("password") or "",           # prefer hashed
                 "role": row.get("role") or "Process Controller",
                 "wtws": coerce_wtws(row.get("assigned_wtws")),
             }
 
-            # map both original and normalized emails to the same user dict
+            # Map both original and normalized emails to the same user dict
             creds["usernames"][email_orig] = user_block
             creds["usernames"][email_norm] = user_block
 
         return creds
 
     except Exception as e:
-        st.error("🔴 Could not fetch user data from BigQuery.")
+        st.error("Could not fetch user data from BigQuery.")
         st.exception(e)
         return {"usernames": {}}
 
@@ -111,7 +112,7 @@ users_from_db = fetch_users_from_db()
 # Authentication
 # -----------------------------
 if not users_from_db or not users_from_db.get("usernames"):
-    st.error("No user data found in the database. Please add users to protapp_water_data.user_permissions.")
+    st.error("No users found. Please populate protapp_water_data.user_permissions.")
     st.stop()
 
 config = {
@@ -128,8 +129,7 @@ authenticator = stauth.Authenticate(
     config["preauthorized"],
 )
 
-# Note: streamlit_authenticator writes to st.session_state internally.
-authenticator.login()
+authenticator.login()  # writes to st.session_state internally
 
 # -----------------------------
 # Main App
@@ -141,19 +141,18 @@ if auth_status:
     display_name = st.session_state.get("name") or st.session_state.get("username", "")
     st.sidebar.title(f"Welcome, {display_name}!")
 
-    # Use normalized username to read our credentials dictionary safely
     username_key = normalize_email(st.session_state.get("username", ""))
     current_user_data = users_from_db["usernames"].get(username_key)
 
     if not current_user_data:
-        st.error("Logged-in user not found in credentials map. Please contact the administrator.")
+        st.error("Logged-in user not found in credentials map. Contact the administrator.")
         st.stop()
 
     user_role = current_user_data.get("role", "Process Controller")
     assigned_wtws = current_user_data.get("wtws", [])
 
     if user_role == "Process Controller":
-        st.header("📝 Water Quality Data Entry")
+        st.header("Water Quality Data Entry")
 
         with st.form("water_quality_form", clear_on_submit=True):
             entry_timestamp = datetime.now(timezone.utc)
@@ -201,7 +200,7 @@ if auth_status:
                     try:
                         errors = client.insert_rows_json(table_id, rows_to_insert)
                         if not errors:
-                            st.success("✅ Record submitted successfully!")
+                            st.success("Record submitted successfully!")
                         else:
                             st.error(f"Error submitting record: {errors}")
                     except Exception as e:
@@ -209,8 +208,15 @@ if auth_status:
                         st.exception(e)
 
     elif user_role == "Manager":
-    st.header("📈 Manager Dashboard")
-    st.info("Manager dashboard coming soon.")
+        st.header("Manager Dashboard")
+        st.info("Manager dashboard coming soon.")
+
+elif auth_status is False:
+    st.error("Username/password is incorrect")
+else:
+    st.title("Water Treatment App")
+    st.warning("Please enter your username and password")
+
 
 
 
