@@ -209,8 +209,9 @@ if auth_status:
                         st.exception(e)
 
     elif user_role == "Manager":
-        st.header("📈 Manager Dashboard")
-        st.info("Manager dashboard
+    st.header("📈 Manager Dashboard")
+    st.info("Manager dashboard coming soon.")
+
 
 
 
