@@ -102,7 +102,12 @@ if st.session_state["authentication_status"]:
     authenticator.logout("Logout", "sidebar")
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
-    current_user_data = users_from_db["usernames"][st.session_state["username"]]
+    # --- THIS IS THE CORRECTED SECTION ---
+    # Convert the logged-in username to lowercase for a case-insensitive lookup
+    username_lower = st.session_state["username"].lower()
+    current_user_data = users_from_db["usernames"][username_lower]
+    # --- END OF CORRECTION ---
+    
     user_role = current_user_data["role"]
     assigned_wtws = current_user_data["wtws"]
 
@@ -139,7 +144,7 @@ if st.session_state["authentication_status"]:
                             "entry_timestamp": entry_timestamp.isoformat(),
                             "wtw_name": wtw_name,
                             "sampling_point": sampling_point,
-                            "user_email": st.session_state["username"],
+                            "user_email": st.session_state["username"], # We store the original-case email
                             "passcode_used": passcode,
                             "ph": ph,
                             "turbidity": turbidity,
@@ -166,5 +171,7 @@ elif st.session_state["authentication_status"] is False:
 elif st.session_state["authentication_status"] is None:
     st.title("💧 Water Treatment App")
     st.warning("Please enter your username and password")
+
+
 
 
