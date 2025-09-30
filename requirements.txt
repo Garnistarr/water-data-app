@@ -1,6 +1,5 @@
-streamlit==1.37.1
-streamlit-authenticator==0.3.2
-bcrypt==4.1.2
+streamlit
+bcrypt
 google-cloud-bigquery
 db-dtypes
 pandas
