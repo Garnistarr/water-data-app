@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
+# NO st.set_page_config() HERE
+
 # -----------------------------
 # BigQuery Connection
 # -----------------------------
