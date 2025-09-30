@@ -16,47 +16,67 @@ st.set_page_config(
     page_icon="💧",
     layout="centered",
 )
-# We remove the main title here because the login form provides its own.
 
 # -----------------------------
 # BigQuery Connection
 # -----------------------------
-try:
-    creds_json_str = st.secrets["GCP_CREDENTIALS"]
-    creds_dict = json.loads(creds_json_str)
-    credentials = service_account.Credentials.from_service_account_info(creds_dict)
-    client = bigquery.Client(credentials=credentials, project=credentials.project_id)
-    st.session_state.db_connection = True
-except Exception as e:
-    st.error("🔴 Could not connect to BigQuery. Please check your credentials in Secrets.")
-    st.exception(e)
+@st.cache_resource
+def get_db_connection():
+    try:
+        creds_json_str = st.secrets["GCP_CREDENTIALS"]
+        creds_dict = json.loads(creds_json_str)
+        credentials = service_account.Credentials.from_service_account_info(creds_dict)
+        client = bigquery.Client(credentials=credentials, project=credentials.project_id)
+        return client
+    except Exception as e:
+        st.error("🔴 Could not connect to BigQuery. Please check your credentials in Secrets.")
+        st.exception(e)
+        st.stop()
+
+client = get_db_connection()
+
+# -----------------------------
+# NEW: Function to Fetch Users from BigQuery
+# -----------------------------
+@st.cache_data(ttl=600) # Cache the user list for 10 minutes
+def fetch_users_from_db():
+    query = "SELECT email, name, password, role, assigned_wtws FROM protapp_water_data.user_permissions"
+    try:
+        df = client.query(query).to_dataframe()
+        
+        # Convert the DataFrame into the dictionary structure streamlit-authenticator expects
+        users = {"usernames": {}}
+        for index, row in df.iterrows():
+            # BigQuery returns a list for the array type. No conversion needed.
+            assigned_wtws = row['assigned_wtws'] if row['assigned_wtws'] is not None else []
+            
+            users["usernames"][row["email"]] = {
+                "email": row["email"],
+                "name": row["name"],
+                "password": row["password"],
+                # We will use these custom fields later
+                "role": row["role"], 
+                "wtws": assigned_wtws
+            }
+        return users
+    except Exception as e:
+        st.error("🔴 Could not fetch user data from BigQuery.")
+        st.exception(e)
+        return {"usernames": {}}
+
+# Fetch the users from the database
+users_from_db = fetch_users_from_db()
+
+# -----------------------------
+# Authentication
+# -----------------------------
+# Check if there are any users fetched from the DB
+if not users_from_db or not users_from_db["usernames"]:
+    st.error("No user data found in the database. Please add users to the user_permissions table.")
     st.stop()
 
-# -----------------------------
-# Authentication (demo users)
-# These are bcrypt hashes for:
-#   jsmith / abc
-#   rjones / def
-# -----------------------------
-users = {
-    "usernames": {
-        "jsmith": {
-            "email": "jsmith@example.com",
-            "name": "John Smith",
-            "password": "$2b$12$o9MoKdEy3VuB5an623IFG.OR2txgFTFV9XrGBEYTIK.7U/GmVU3mK",
-        },
-        "rjones": {
-            "email": "rjones@example.com",
-            "name": "Rebecca Jones",
-            "password": "$2b$12$Q6QFIW9fRf74GMdjcHmsbuTvdb11tVCIpVaTavrmAxVwB7L6iklyS",
-        },
-    }
-}
-
-# --- THIS IS THE CORRECTED SECTION ---
-# The new version of the library expects a single configuration dictionary.
 config = {
-    'credentials': users,
+    'credentials': users_from_db,
     'cookie': {
         'name': 'WaterAppCookie',
         'key': 'abcdef',
@@ -71,9 +91,7 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# Render the login widget
 authenticator.login()
-# --- END OF CORRECTION ---
 
 # -----------------------------
 # Main App
@@ -82,18 +100,20 @@ if st.session_state["authentication_status"]:
     authenticator.logout("Logout", "sidebar")
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
-    # Save the email for later DB inserts
-    st.session_state["email"] = users["usernames"][st.session_state["username"]]["email"]
-
-    # TODO: Later, fetch role & assigned WTWs from BigQuery user_permissions.
-    user_role = "Process Controller"
+    # Get user details from the fetched user data
+    current_user_data = users_from_db["usernames"][st.session_state["username"]]
+    user_role = current_user_data["role"]
+    assigned_wtws = current_user_data["wtws"]
 
     if user_role == "Process Controller":
         st.header("📝 Water Quality Data Entry")
 
         with st.form("water_quality_form", clear_on_submit=True):
             entry_timestamp = datetime.now(timezone.utc)
-            wtw_name = st.selectbox("Select WTW*", ["Ashton WTW", "Clearwater WTW"])
+            
+            # Now the WTW list is dynamic based on user permissions
+            wtw_name = st.selectbox("Select WTW*", assigned_wtws)
+
             sampling_point = st.selectbox(
                 "Sampling Point*",
                 ["Raw", "Settling", "Filter 1", "Filter 2", "Final"],
@@ -109,8 +129,8 @@ if st.session_state["authentication_status"]:
             submitted = st.form_submit_button("Submit Record")
 
             if submitted:
-                if not passcode:
-                    st.error("Passcode is required to submit.")
+                if not passcode or not wtw_name:
+                    st.error("Passcode and WTW selection are required.")
                 else:
                     entry_id = str(uuid.uuid4())
                     rows_to_insert = [
@@ -119,7 +139,7 @@ if st.session_state["authentication_status"]:
                             "entry_timestamp": entry_timestamp.isoformat(),
                             "wtw_name": wtw_name,
                             "sampling_point": sampling_point,
-                            "user_email": st.session_state["email"],
+                            "user_email": st.session_state["username"],
                             "passcode_used": passcode,
                             "ph": ph,
                             "turbidity": turbidity,
@@ -128,7 +148,7 @@ if st.session_state["authentication_status"]:
                     ]
                     table_id = "protapp_water_data.water_quality_log"
                     try:
-                        errors = client.insert_rows_json(table_id, rows_to_insert)
+                        errors = client.insert_rows_json(table_id, rows_to_.insert)
                         if not errors:
                             st.success("✅ Record submitted successfully!")
                         else:
@@ -146,5 +166,6 @@ elif st.session_state["authentication_status"] is False:
 elif st.session_state["authentication_status"] is None:
     st.title("💧 Water Treatment App")
     st.warning("Please enter your username and password")
+
 
 
