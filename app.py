@@ -1,4 +1,3 @@
-
 import json
 import uuid
 from datetime import datetime, timezone
@@ -47,8 +46,8 @@ def fetch_users_from_db():
 
         users = {"usernames": {}}
         for index, row in df.iterrows():
-            # Use email as-is for the dictionary key to match authenticator lookup
-            email_key = row["email"]
+            # Use lower-case email for the dictionary key to avoid case issues
+            email_key = row["email"].lower()
             assigned_wtws = row['assigned_wtws'] if row['assigned_wtws'] is not None else []
 
             users["usernames"][email_key] = {
@@ -112,13 +111,13 @@ authenticator.login()
 # -----------------------------
 # Main App
 # -----------------------------
-if st.session_state["authentication_status"]:
+if st.session_state.get("authentication_status"):
     authenticator.logout("Logout", "sidebar")
     st.sidebar.title(f"Welcome, {st.session_state['name']}!")
 
     # --- PATCHED SECTION ---
-    # Use username from session_state as-is
-    username = st.session_state["username"]
+    # Use username from session_state as lower-case for lookup
+    username = st.session_state["username"].lower()
     # Defensive: Check if username exists in the dictionary
     if username not in users_from_db["usernames"]:
         st.error("Authenticated user not found in the database. Please contact admin.")
@@ -167,7 +166,7 @@ if st.session_state["authentication_status"]:
                             "entry_timestamp": entry_timestamp.isoformat(),
                             "wtw_name": wtw_name,
                             "sampling_point": sampling_point,
-                            "user_email": username,  # Use original-case email
+                            "user_email": username,  # Use lower-case email
                             "passcode_used": passcode,
                             "ph": ph,
                             "turbidity": turbidity,
@@ -189,9 +188,9 @@ if st.session_state["authentication_status"]:
         st.header("📈 Manager Dashboard")
         st.info("Manager dashboard coming soon.")
 
-elif st.session_state["authentication_status"] is False:
+elif st.session_state.get("authentication_status") is False:
     st.error("Username/password is incorrect")
-elif st.session_state["authentication_status"] is None:
+elif st.session_state.get("authentication_status") is None:
     st.title("💧 Water Treatment App")
     st.warning("Please enter your username and password")
 
