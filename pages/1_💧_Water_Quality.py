@@ -1,79 +1,26 @@
 import streamlit as st
-import json
 import uuid
 from datetime import datetime, timezone
-from google.cloud import bigquery
-from google.oauth2 import service_account
 
-# NO st.set_page_config() HERE
+# --- This page is a simple worker. It gets all its info from the shared briefcase (session_state) ---
 
-# -----------------------------
-# BigQuery Connection
-# -----------------------------
-@st.cache_resource
-def get_db_connection():
-    try:
-        creds_json_str = st.secrets["GCP_CREDENTIALS"]
-        creds_dict = json.loads(creds_json_str)
-        credentials = service_account.Credentials.from_service_account_info(creds_dict)
-        client = bigquery.Client(credentials=credentials, project=credentials.project_id)
-        return client
-    except Exception:
-        st.error("🔴 Could not connect to BigQuery. Please check your credentials in Secrets.")
-        st.stop()
-
-client = get_db_connection()
-
-# -----------------------------
-# Function to Fetch Users (to get WTW list)
-# -----------------------------
-@st.cache_data(ttl=600)
-def fetch_users_from_db():
-    query = "SELECT email, name, password, role, assigned_wtws FROM protapp_water_data.user_permissions"
-    try:
-        df = client.query(query).to_dataframe()
-        if df.empty:
-            return None
-        df['email'] = df['email'].str.lower()
-        
-        users = {}
-        for index, row in df.iterrows():
-            email_lower = row["email"]
-            wtws_value = row['assigned_wtws']
-            if wtws_value is None:
-                assigned_list = []
-            else:
-                assigned_list = list(wtws_value)
-
-            users[email_lower] = {
-                "name": row["name"], "password": row["password"],
-                "role": row["role"], "wtws": assigned_list
-            }
-        return users
-    except Exception:
-        return None
-
-# -----------------------------
-# Water Quality Page
-# -----------------------------
+# 1. Check if the user is logged in
 if 'authentication_status' not in st.session_state or not st.session_state['authentication_status']:
     st.warning("Please log in to access this page.")
     st.stop()
 
-# Get data for the current logged-in user
-users_from_db = fetch_users_from_db()
-if users_from_db:
-    current_user_data = users_from_db.get(st.session_state['email'])
-else:
-    current_user_data = None
+# 2. Get the shared data from the briefcase
+user_data = st.session_state.get('user_data', {})
+client = st.session_state.get('db_client')
 
-if not current_user_data:
-    st.error("Could not find your user data. Please log out and log back in.")
+if not user_data or not client:
+    st.error("Session expired or data is missing. Please log out and log back in.")
     st.stop()
 
-user_role = current_user_data.get("role")
-assigned_wtws = current_user_data.get("wtws", [])
+user_role = user_data.get("role")
+assigned_wtws = user_data.get("wtws", [])
 
+# 3. Build the page based on the user's role
 if user_role == "Process Controller":
     st.header("📝 Water Quality Data Entry")
 
@@ -81,7 +28,7 @@ if user_role == "Process Controller":
         entry_timestamp = datetime.now(timezone.utc)
         
         if not assigned_wtws:
-            st.warning("You are not assigned to any WTWs. Please contact an administrator.")
+            st.warning("You are not assigned to any Water Treatment Works. Please contact an administrator.")
             wtw_name = None
         else:
             wtw_name = st.selectbox("Select WTW*", assigned_wtws)
@@ -117,6 +64,7 @@ if user_role == "Process Controller":
                     st.error("Error while inserting into BigQuery.")
                     st.exception(e)
 elif user_role == "Manager":
-    st.info("This page is for data entry. Manager dashboard is on a different page.")
+    st.info("As a Manager, you do not have access to this data entry form.")
+
 
 
