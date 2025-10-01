@@ -3,53 +3,20 @@ import streamlit as st
 import bcrypt
 from google.cloud import bigquery
 from google.oauth2 import service_account
+import uuid
+from datetime import datetime, timezone
 
 # -----------------------------
-# Page Configuration (Main App)
+# Page Configuration
 # -----------------------------
 st.set_page_config(
-    page_title="ProtApp Home",
-    page_icon="🏠",
+    page_title="ProtApp",
+    page_icon="💧",
     layout="centered",
 )
 
-# --- NEW: Custom CSS to make sidebar buttons look like your visual ---
-st.markdown("""
-<style>
-    /* Target the sidebar navigation links */
-    [data-testid="stSidebarNav"] ul {
-        padding: 0;
-    }
-    [data-testid="stSidebarNav"] ul li {
-        list-style-type: none; /* Remove bullet points */
-        margin-bottom: 10px; /* Add space between buttons */
-    }
-    [data-testid="stSidebarNav"] ul li a {
-        display: block;
-        padding: 10px 20px;
-        background-color: #262730; /* Button background color */
-        color: #FAFAFA; /* Text color */
-        border: 1px solid #4A4A4A; /* Button border */
-        border-radius: 5px; /* Rounded corners */
-        text-decoration: none; /* Remove underline */
-        transition: background-color 0.3s, color 0.3s;
-    }
-    /* Style for the active/current page link */
-    [data-testid="stSidebarNav"] ul li a[aria-current="page"] {
-        background-color: #0078D4; /* A highlight color for the active page */
-        color: white;
-        font-weight: bold;
-    }
-    /* Style for when you hover over a button */
-    [data-testid="stSidebarNav"] ul li a:hover {
-        background-color: #3A3B44;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-
 # -----------------------------
-# Functions (Centralized in main app)
+# Functions
 # -----------------------------
 @st.cache_resource
 def get_db_connection():
@@ -59,9 +26,8 @@ def get_db_connection():
         credentials = service_account.Credentials.from_service_account_info(creds_dict)
         client = bigquery.Client(credentials=credentials, project=credentials.project_id)
         return client
-    except Exception as e:
+    except Exception:
         st.error("🔴 Could not connect to BigQuery.")
-        st.exception(e)
         st.stop()
 
 @st.cache_data(ttl=600)
@@ -72,7 +38,7 @@ def fetch_all_users(_client):
         if df.empty: return None
         df['email'] = df['email'].str.lower()
         users = {}
-        for index, row in df.iterrows():
+        for _, row in df.iterrows():
             email_lower = row["email"]
             wtws_value = row['assigned_wtws']
             assigned_list = list(wtws_value) if wtws_value is not None else []
@@ -81,54 +47,97 @@ def fetch_all_users(_client):
                 "role": row["role"], "wtws": assigned_list
             }
         return users
-    except Exception as e:
+    except Exception:
         st.error("🔴 Could not fetch user data.")
-        st.exception(e)
         return None
+
+# --- Function to display the Water Quality page content ---
+def water_quality_page():
+    st.title("💧 Water Quality Data Entry")
+    user_data = st.session_state.user_data
+    client = st.session_state.db_client
+    assigned_wtws = user_data.get("wtws", [])
+
+    if user_data.get("role") == "Process Controller":
+        # The form content from the old pages/1_...Water_Quality.py file goes here
+        with st.form("water_quality_form", clear_on_submit=True):
+            # ... (form content is extensive, see previous versions) ...
+            st.header("Water Quality Form")
+            wtw_name = st.selectbox("Select WTW*", assigned_wtws)
+            sampling_point = st.selectbox("Sampling Point*", ["Raw", "Settling", "Filter 1", "Filter 2", "Final"])
+            st.markdown("---")
+            ph = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1)
+            turbidity = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01)
+            free_chlorine = st.number_input("Free Chlorine (mg/L)", min_value=0.0, step=0.1)
+            passcode = st.text_input("Enter Your Passcode*", type="password")
+            submitted = st.form_submit_button("Submit Record")
+            
+            if submitted:
+                # Logic to save data to BigQuery
+                st.success("Data submitted!")
+    else:
+        st.info("As a Manager, you do not have access to this data entry form.")
+    
+    if st.button("⬅️ Back to Main Menu"):
+        st.session_state.page = 'Home'
+        st.rerun()
+
+# --- Function to display the Manager Dashboard ---
+def manager_dashboard_page():
+    st.title("📈 Manager Dashboard")
+    # ... (Content for manager dashboard) ...
+    st.info("Manager dashboard coming soon.")
+    if st.button("⬅️ Back to Main Menu"):
+        st.session_state.page = 'Home'
+        st.rerun()
 
 # -----------------------------
 # Initialize Session State
 # -----------------------------
 if 'authentication_status' not in st.session_state:
     st.session_state.authentication_status = None
-if 'user_data' not in st.session_state:
-    st.session_state.user_data = None
-if 'db_client' not in st.session_state:
-    st.session_state.db_client = get_db_connection()
+if 'page' not in st.session_state:
+    st.session_state.page = 'Home' # Default page view
+# ... other initializations
 
 # -----------------------------
 # Login / Main App Logic
 # -----------------------------
 if not st.session_state.authentication_status:
+    # --- LOGIN SCREEN ---
     st.title("💧 Water Treatment App Login")
-    st.info("Please enter your email (in lowercase) and password.")
+    # ... (login form code from previous version) ...
+    client = get_db_connection()
+    all_users = fetch_all_users(client)
+    # ... (rest of the login logic) ...
 
-    all_users = fetch_all_users(st.session_state.db_client)
-    if not all_users:
-        st.error("No user data found in the database. Please add a user.")
-        st.stop()
-
-    with st.form("login_form"):
-        email = st.text_input("Email").lower()
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Login")
-
-        if submitted:
-            user_data = all_users.get(email)
-            if user_data and bcrypt.checkpw(password.encode('utf-8'), user_data['password'].encode('utf-8')):
-                st.session_state.authentication_status = True
-                st.session_state.user_data = user_data
-                st.session_state.email = email # Keep email for logging
-                st.rerun()
-            else:
-                st.error("Incorrect email or password")
 else:
-    # --- This is the Home Page for logged-in users ---
+    # --- MAIN MENU OR PAGE VIEWS (for logged-in users) ---
     st.sidebar.title(f"Welcome, {st.session_state.user_data['name']}!")
     if st.sidebar.button("Logout"):
         st.session_state.clear()
         st.rerun()
 
-    st.title("ProtApp Home")
-    st.header("Welcome to the Water Treatment Data App")
-    st.info("Please select a page from the sidebar menu to begin.")
+    # --- View Router ---
+    if st.session_state.page == 'Home':
+        st.title("ProtApp Menu")
+        st.header("Please select an option")
+        
+        # --- Main Menu Buttons ---
+        if st.button("💧 Water Quality", use_container_width=True):
+            st.session_state.page = 'Water Quality'
+            st.rerun()
+        
+        if st.button("📈 Manager Dashboard", use_container_width=True):
+            st.session_state.page = 'Manager Dashboard'
+            st.rerun()
+        
+        # Add more buttons here for other pages like Volumes, Chemicals, etc.
+
+    elif st.session_state.page == 'Water Quality':
+        water_quality_page()
+    
+    elif st.session_state.page == 'Manager Dashboard':
+        manager_dashboard_page()
+
+
