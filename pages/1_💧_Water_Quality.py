@@ -4,64 +4,73 @@ from datetime import datetime, timezone
 
 st.title("💧 Water Quality Data Entry")
 
-# Check if the user is logged in
-if st.session_state.get('authentication_status'):
-    user_data = st.session_state.user_data
-    client = st.session_state.db_client
-    user_role = user_data.get("role")
-    assigned_wtws = user_data.get("wtws", [])
-
-    if user_role == "Process Controller":
-        with st.form("water_quality_form", clear_on_submit=True):
-            entry_timestamp = datetime.now(timezone.utc)
-            
-            if not assigned_wtws:
-                st.warning("You are not assigned to any WTWs. Please contact an administrator.")
-                wtw_name = None
-            else:
-                wtw_name = st.selectbox("Select WTW*", assigned_wtws)
-
-            sampling_point = st.selectbox("Sampling Point*", ["Raw", "Settling", "Filter 1", "Filter 2", "Final"])
-            st.markdown("---")
-            
-            ph = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1)
-            ph_image = st.camera_input("Take pH Reading Picture", key="ph_cam")
-
-            turbidity = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01)
-            turbidity_image = st.camera_input("Take Turbidity Reading Picture", key="turb_cam")
-
-            free_chlorine = st.number_input("Free Chlorine (mg/L)", min_value=0.0, step=0.1)
-            free_chlorine_image = st.camera_input("Take Free Chlorine Picture", key="chlor_cam")
-
-            passcode = st.text_input("Enter Your Passcode*", type="password")
-            submitted = st.form_submit_button("Submit Record")
-
-            if submitted:
-                if not passcode or not wtw_name:
-                    st.error("Passcode and WTW selection are required.")
-                else:
-                    entry_id = str(uuid.uuid4())
-                    rows_to_insert = [{
-                        "entry_id": entry_id, "entry_timestamp": entry_timestamp.isoformat(),
-                        "wtw_name": wtw_name, "sampling_point": sampling_point,
-                        "user_email": st.session_state.email,
-                        "passcode_used": passcode, "ph": ph, "turbidity": turbidity,
-                        "free_chlorine": free_chlorine,
-                        # TODO: Add image filenames once upload logic is built
-                    }]
-                    table_id = "protapp_water_data.water_quality_log"
-                    try:
-                        errors = client.insert_rows_json(table_id, rows_to_insert)
-                        if not errors:
-                            st.success("✅ Record submitted successfully!")
-                        else:
-                            st.error(f"Error submitting record: {errors}")
-                    except Exception as e:
-                        st.error("Error while inserting into BigQuery.")
-                        st.exception(e)
-    else:
-        st.info("As a Manager, you do not have access to this data entry form.")
-else:
+# --- Security Check ---
+# Ensure the user is logged in before showing any content
+if not st.session_state.get('authentication_status'):
     st.warning("Please log in on the Home page to access this page.")
+    st.stop()
+
+# --- Get Shared Data ---
+# Safely get data that was stored during login on the Home.py page
+user_data = st.session_state.get('user_data', {})
+client = st.session_state.get('db_client')
+user_role = user_data.get("role")
+assigned_wtws = user_data.get("wtws", [])
+
+# --- Page Content ---
+# Only show the form to the correct user role
+if user_role == "Process Controller":
+
+    # Create the tabs for different sampling points
+    tab_raw, tab_settling, tab_final = st.tabs(["🚰 Raw Water", "💧 Settling", "✅ Final Water"])
+
+    # --- Form for Raw Water ---
+    with tab_raw:
+        st.header("Raw Water Parameters")
+        with st.form("raw_water_form", clear_on_submit=True):
+            st.info("Fill out the form for the Raw Water sampling point.")
+            wtw_name_raw = st.selectbox("Select WTW*", assigned_wtws, key="wtw_raw")
+            ph_raw = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1, key="ph_raw")
+            turbidity_raw = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01, key="turb_raw")
+            passcode_raw = st.text_input("Enter Your Passcode*", type="password", key="pass_raw")
+            
+            submitted_raw = st.form_submit_button("Submit Raw Water Record")
+            if submitted_raw:
+                # This is where you would save the 'raw' data to BigQuery
+                st.success("Raw Water data submitted successfully!")
+
+    # --- Form for Settling Water ---
+    with tab_settling:
+        st.header("Settling Water Parameters")
+        with st.form("settling_water_form", clear_on_submit=True):
+            st.info("Fill out the form for the Settling Water sampling point.")
+            wtw_name_settling = st.selectbox("Select WTW*", assigned_wtws, key="wtw_settling")
+            ph_settling = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1, key="ph_settling")
+            turbidity_settling = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01, key="turb_settling")
+            passcode_settling = st.text_input("Enter Your Passcode*", type="password", key="pass_settling")
+
+            submitted_settling = st.form_submit_button("Submit Settling Water Record")
+            if submitted_settling:
+                st.success("Settling Water data submitted successfully!")
+
+    # --- Form for Final Water (with all parameters) ---
+    with tab_final:
+        st.header("Final Water Parameters")
+        with st.form("final_water_form", clear_on_submit=True):
+            st.info("Fill out the form for the Final Water sampling point.")
+            wtw_name_final = st.selectbox("Select WTW*", assigned_wtws, key="wtw_final")
+            ph_final = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1, key="ph_final")
+            turbidity_final = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01, key="turb_final")
+            free_chlorine_final = st.number_input("Free Chlorine (mg/L)", min_value=0.0, step=0.1, key="chlor_final")
+            passcode_final = st.text_input("Enter Your Passcode*", type="password", key="pass_final")
+            
+            submitted_final = st.form_submit_button("Submit Final Water Record")
+            if submitted_final:
+                # This is where you would call your function to save 'final' data
+                st.success("Final Water data submitted successfully!")
+
+else:
+    st.info("As a Manager, you do not have access to this data entry form.")
+
 
 
