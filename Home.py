@@ -59,9 +59,7 @@ def water_quality_page():
     assigned_wtws = user_data.get("wtws", [])
 
     if user_data.get("role") == "Process Controller":
-        # The form content from the old pages/1_...Water_Quality.py file goes here
         with st.form("water_quality_form", clear_on_submit=True):
-            # ... (form content is extensive, see previous versions) ...
             st.header("Water Quality Form")
             wtw_name = st.selectbox("Select WTW*", assigned_wtws)
             sampling_point = st.selectbox("Sampling Point*", ["Raw", "Settling", "Filter 1", "Filter 2", "Final"])
@@ -74,7 +72,7 @@ def water_quality_page():
             
             if submitted:
                 # Logic to save data to BigQuery
-                st.success("Data submitted!")
+                st.success("Data submitted!") # Placeholder
     else:
         st.info("As a Manager, you do not have access to this data entry form.")
     
@@ -85,7 +83,6 @@ def water_quality_page():
 # --- Function to display the Manager Dashboard ---
 def manager_dashboard_page():
     st.title("📈 Manager Dashboard")
-    # ... (Content for manager dashboard) ...
     st.info("Manager dashboard coming soon.")
     if st.button("⬅️ Back to Main Menu"):
         st.session_state.page = 'Home'
@@ -97,8 +94,10 @@ def manager_dashboard_page():
 if 'authentication_status' not in st.session_state:
     st.session_state.authentication_status = None
 if 'page' not in st.session_state:
-    st.session_state.page = 'Home' # Default page view
-# ... other initializations
+    st.session_state.page = 'Home'
+if 'user_data' not in st.session_state:
+    st.session_state.user_data = None
+
 
 # -----------------------------
 # Login / Main App Logic
@@ -106,10 +105,29 @@ if 'page' not in st.session_state:
 if not st.session_state.authentication_status:
     # --- LOGIN SCREEN ---
     st.title("💧 Water Treatment App Login")
-    # ... (login form code from previous version) ...
+    st.info("Please enter your email (in lowercase) and password.")
+
     client = get_db_connection()
     all_users = fetch_all_users(client)
-    # ... (rest of the login logic) ...
+    
+    if not all_users:
+        st.error("No user data found in the database. Please add a user.")
+        st.stop()
+
+    with st.form("login_form"):
+        email = st.text_input("Email").lower()
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
+
+        if submitted:
+            user_data = all_users.get(email)
+            if user_data and bcrypt.checkpw(password.encode('utf-8'), user_data['password'].encode('utf-8')):
+                st.session_state.authentication_status = True
+                st.session_state.user_data = user_data
+                st.session_state.email = email
+                st.rerun()
+            else:
+                st.error("Incorrect email or password")
 
 else:
     # --- MAIN MENU OR PAGE VIEWS (for logged-in users) ---
@@ -135,9 +153,5 @@ else:
         # Add more buttons here for other pages like Volumes, Chemicals, etc.
 
     elif st.session_state.page == 'Water Quality':
-        water_quality_page()
-    
-    elif st.session_state.page == 'Manager Dashboard':
-        manager_dashboard_page()
 
 
