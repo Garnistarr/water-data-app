@@ -55,7 +55,7 @@ def fetch_all_users(_client):
 def water_quality_page():
     st.title("💧 Water Quality Data Entry")
     user_data = st.session_state.user_data
-    client = st.session_state.db_client
+    client = get_db_connection() # Get a fresh client connection
     assigned_wtws = user_data.get("wtws", [])
 
     if user_data.get("role") == "Process Controller":
@@ -72,7 +72,22 @@ def water_quality_page():
             
             if submitted:
                 # Logic to save data to BigQuery
-                st.success("Data submitted!") # Placeholder
+                entry_id = str(uuid.uuid4())
+                entry_timestamp = datetime.now(timezone.utc)
+                rows_to_insert = [{
+                    "entry_id": entry_id, "entry_timestamp": entry_timestamp.isoformat(),
+                    "wtw_name": wtw_name, "sampling_point": sampling_point,
+                    "user_email": st.session_state.user_data['email'],
+                    "passcode_used": passcode, "ph": ph, "turbidity": turbidity,
+                    "free_chlorine": free_chlorine,
+                }]
+                table_id = "protapp_water_data.water_quality_log"
+                errors = client.insert_rows_json(table_id, rows_to_insert)
+                if not errors:
+                    st.success("Data submitted successfully!")
+                else:
+                    st.error(f"Error submitting record: {errors}")
+
     else:
         st.info("As a Manager, you do not have access to this data entry form.")
     
@@ -124,7 +139,6 @@ if not st.session_state.authentication_status:
             if user_data and bcrypt.checkpw(password.encode('utf-8'), user_data['password'].encode('utf-8')):
                 st.session_state.authentication_status = True
                 st.session_state.user_data = user_data
-                st.session_state.email = email
                 st.rerun()
             else:
                 st.error("Incorrect email or password")
