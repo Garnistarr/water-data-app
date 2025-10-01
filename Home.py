@@ -9,9 +9,44 @@ from google.oauth2 import service_account
 # -----------------------------
 st.set_page_config(
     page_title="ProtApp Home",
-    page_icon="💧",
+    page_icon="🏠",
     layout="centered",
 )
+
+# --- NEW: Custom CSS to make sidebar buttons look like your visual ---
+st.markdown("""
+<style>
+    /* Target the sidebar navigation links */
+    [data-testid="stSidebarNav"] ul {
+        padding: 0;
+    }
+    [data-testid="stSidebarNav"] ul li {
+        list-style-type: none; /* Remove bullet points */
+        margin-bottom: 10px; /* Add space between buttons */
+    }
+    [data-testid="stSidebarNav"] ul li a {
+        display: block;
+        padding: 10px 20px;
+        background-color: #262730; /* Button background color */
+        color: #FAFAFA; /* Text color */
+        border: 1px solid #4A4A4A; /* Button border */
+        border-radius: 5px; /* Rounded corners */
+        text-decoration: none; /* Remove underline */
+        transition: background-color 0.3s, color 0.3s;
+    }
+    /* Style for the active/current page link */
+    [data-testid="stSidebarNav"] ul li a[aria-current="page"] {
+        background-color: #0078D4; /* A highlight color for the active page */
+        color: white;
+        font-weight: bold;
+    }
+    /* Style for when you hover over a button */
+    [data-testid="stSidebarNav"] ul li a:hover {
+        background-color: #3A3B44;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 # -----------------------------
 # Functions (Centralized in main app)
