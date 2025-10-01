@@ -1,34 +1,67 @@
 import streamlit as st
-
-# (Login check code would go here)
+import uuid
+from datetime import datetime, timezone
 
 st.title("💧 Water Quality Data Entry")
 
-# Create the tabs
-tab1, tab2, tab3 = st.tabs(["Raw Water", "Settled Water", "Final Water"])
+# Check if the user is logged in
+if st.session_state.get('authentication_status'):
+    user_data = st.session_state.user_data
+    client = st.session_state.db_client
+    user_role = user_data.get("role")
+    assigned_wtws = user_data.get("wtws", [])
 
-with tab1:
-    st.header("Raw Water Parameters")
-    # Your form for Raw Water would go here
-    with st.form("raw_water_form"):
-        ph_raw = st.number_input("pH Value", key="ph_raw")
-        # ... other inputs ...
-        st.form_submit_button("Submit Raw Water Data")
+    if user_role == "Process Controller":
+        with st.form("water_quality_form", clear_on_submit=True):
+            entry_timestamp = datetime.now(timezone.utc)
+            
+            if not assigned_wtws:
+                st.warning("You are not assigned to any WTWs. Please contact an administrator.")
+                wtw_name = None
+            else:
+                wtw_name = st.selectbox("Select WTW*", assigned_wtws)
 
-with tab2:
-    st.header("Settled Water Parameters")
-    # Your form for Settled Water would go here
-    with st.form("settled_water_form"):
-        ph_settled = st.number_input("pH Value", key="ph_settled")
-        # ... other inputs ...
-        st.form_submit_button("Submit Settled Water Data")
+            sampling_point = st.selectbox("Sampling Point*", ["Raw", "Settling", "Filter 1", "Filter 2", "Final"])
+            st.markdown("---")
+            
+            ph = st.number_input("pH Value", min_value=0.0, max_value=14.0, value=7.0, step=0.1)
+            ph_image = st.camera_input("Take pH Reading Picture", key="ph_cam")
 
-with tab3:
-    st.header("Final Water Parameters")
-    # Your form for Final Water would go here
-    with st.form("final_water_form"):
-        ph_final = st.number_input("pH Value", key="ph_final")
-        # ... other inputs ...
-        st.form_submit_button("Submit Final Water Data")
+            turbidity = st.number_input("Turbidity (NTU)", min_value=0.0, step=0.01)
+            turbidity_image = st.camera_input("Take Turbidity Reading Picture", key="turb_cam")
+
+            free_chlorine = st.number_input("Free Chlorine (mg/L)", min_value=0.0, step=0.1)
+            free_chlorine_image = st.camera_input("Take Free Chlorine Picture", key="chlor_cam")
+
+            passcode = st.text_input("Enter Your Passcode*", type="password")
+            submitted = st.form_submit_button("Submit Record")
+
+            if submitted:
+                if not passcode or not wtw_name:
+                    st.error("Passcode and WTW selection are required.")
+                else:
+                    entry_id = str(uuid.uuid4())
+                    rows_to_insert = [{
+                        "entry_id": entry_id, "entry_timestamp": entry_timestamp.isoformat(),
+                        "wtw_name": wtw_name, "sampling_point": sampling_point,
+                        "user_email": st.session_state.email,
+                        "passcode_used": passcode, "ph": ph, "turbidity": turbidity,
+                        "free_chlorine": free_chlorine,
+                        # TODO: Add image filenames once upload logic is built
+                    }]
+                    table_id = "protapp_water_data.water_quality_log"
+                    try:
+                        errors = client.insert_rows_json(table_id, rows_to_insert)
+                        if not errors:
+                            st.success("✅ Record submitted successfully!")
+                        else:
+                            st.error(f"Error submitting record: {errors}")
+                    except Exception as e:
+                        st.error("Error while inserting into BigQuery.")
+                        st.exception(e)
+    else:
+        st.info("As a Manager, you do not have access to this data entry form.")
+else:
+    st.warning("Please log in on the Home page to access this page.")
 
 
